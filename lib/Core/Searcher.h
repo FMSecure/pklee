@@ -63,6 +63,7 @@ namespace klee {
     enum CoreSearchType : std::uint8_t {
       DFS,
       BFS,
+      Priority,
       RandomState,
       RandomPath,
       NURS_CovNew,
@@ -94,6 +95,20 @@ namespace klee {
   /// mind that the process tree (PTree) is a binary tree and hence the depth of
   /// a state in that tree and its branch depth during BFS are different.
   class BFSSearcher final : public Searcher {
+    std::deque<ExecutionState*> states;
+
+  public:
+    ExecutionState &selectState() override;
+    void update(ExecutionState *current,
+                const std::vector<ExecutionState *> &addedStates,
+                const std::vector<ExecutionState *> &removedStates) override;
+    bool empty() override;
+    void printName(llvm::raw_ostream &os) override;
+  };
+
+  /// PrioritySearcher implements a mix of BFS and DFS where states are selected
+  /// based on changes of a subscribed variable.
+  class PrioritySearcher final : public Searcher {
     std::deque<ExecutionState*> states;
 
   public:

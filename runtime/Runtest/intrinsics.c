@@ -177,3 +177,5 @@ void klee_set_forking(unsigned enable) {}
 
 void klee_open_merge() {}
 void klee_close_merge() {}
+
+void klee_subscribe(void *addr, const char *name, enum EventType event_t) {}

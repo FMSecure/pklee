@@ -16,6 +16,7 @@
 
 #include "klee/ADT/ImmutableSet.h"
 #include "klee/ADT/TreeStream.h"
+#include "klee/Core/EventTypes.h"
 #include "klee/Expr/Constraints.h"
 #include "klee/Expr/Expr.h"
 #include "klee/KDAlloc/kdalloc.h"
@@ -170,6 +171,9 @@ public:
   /// @brief Stack representing the current instruction stream
   stack_ty stack;
 
+  /// @brief If true, it should be prioritized by search algorithm
+  mutable std::uint32_t selectionPriority = 0;
+
   /// @brief Remember from which Basic Block control flow arrived
   /// (i.e. to select the right phi values)
   std::uint32_t incomingBBIndex;
@@ -215,6 +219,9 @@ public:
   //
   // FIXME: Move to a shared list structure (not critical).
   std::vector<std::pair<ref<const MemoryObject>, const Array *>> symbolics;
+
+  /// @brief Ordered list of subscribed variables: used to guide execution.
+  std::vector<std::pair<ref<const MemoryObject>, const EventType>> subscriptions;
 
   /// @brief A set of boolean expressions
   /// the user has requested be true of a counterexample.
@@ -272,9 +279,14 @@ public:
   void deallocate(const MemoryObject *mo);
 
   void addSymbolic(const MemoryObject *mo, const Array *array);
+  void addSubscription(const MemoryObject *mo, EventType event);
 
   void addConstraint(ref<Expr> e);
   void addCexPreference(const ref<Expr> &cond);
+
+  void setSelectionPriority(std::uint32_t priority) const {
+    this->selectionPriority = priority;
+  }
 
   bool merge(const ExecutionState &b);
   void dumpStack(llvm::raw_ostream &out) const;

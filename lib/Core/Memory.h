@@ -54,6 +54,7 @@ public:
   mutable std::string name;
 
   bool isLocal;
+  mutable bool hasSubscribers = false;
   mutable bool isGlobal;
   bool isFixed;
 
@@ -65,6 +66,9 @@ public:
   /// should be either the allocating instruction or the global object
   /// it was allocated for (or whatever else makes sense).
   const llvm::Value *allocSite;
+
+  /// Stores a list of Klee expressions that are written in this address
+  mutable std::vector<Expr *> writeHistory;
 
   // DO NOT IMPLEMENT
   MemoryObject(const MemoryObject &b);
@@ -107,6 +111,10 @@ public:
 
   void setName(std::string name) const {
     this->name = name;
+  }
+
+  void setSubscribed() const {
+    this->hasSubscribers = true;
   }
 
   ref<ConstantExpr> getBaseExpr() const { 
@@ -197,6 +205,9 @@ public:
 
   bool readOnly;
 
+  /// Stores a list of Klee expressions that are written in this address
+  mutable std::vector<Expr *> writeHistory;
+
 public:
   /// Create a new object state for the given memory object with concrete
   /// contents. The initial contents are undefined, it is the callers
@@ -239,6 +250,14 @@ public:
   */
   void flushToConcreteStore(TimingSolver *solver,
                             const ExecutionState &state) const;
+
+  void initializeWriteHistory(std::vector<Expr *> prevHistory) const {
+    this->writeHistory = prevHistory;
+  }
+
+  void appendWriteHistory(ref<Expr> e) const {
+    this->writeHistory.push_back(e.get());
+  }
 
 private:
   const UpdateList &getUpdates() const;

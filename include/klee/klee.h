@@ -13,6 +13,8 @@
 #include "stdint.h"
 #include "stddef.h"
 
+#include "klee/Core/EventTypes.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -158,6 +160,14 @@ extern "C" {
 
   /* Get errno value of the current state */
   int klee_get_errno(void);
+
+  /* klee_subscribe - Select states based on events on the object pointer
+
+     \arg addr - The start of the object.
+     \arg name - A name used for identifying the object in messages, output
+     files, etc. If NULL, object is called "unnamed".
+     \arg event_t- Type of events to use as selection criteria */
+  void klee_subscribe(void *addr, const char *name, enum EventType event_t);
 #ifdef __cplusplus
 }
 #endif

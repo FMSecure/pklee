@@ -92,6 +92,7 @@ ExecutionState::ExecutionState(const ExecutionState& state):
     pc(state.pc),
     prevPC(state.prevPC),
     stack(state.stack),
+    selectionPriority(0),
     incomingBBIndex(state.incomingBBIndex),
     depth(state.depth),
     addressSpace(state.addressSpace),
@@ -102,6 +103,7 @@ ExecutionState::ExecutionState(const ExecutionState& state):
     symPathOS(state.symPathOS),
     coveredLines(state.coveredLines),
     symbolics(state.symbolics),
+    subscriptions(state.subscriptions),
     cexPreferences(state.cexPreferences),
     arrayNames(state.arrayNames),
     openMergeStack(state.openMergeStack),
@@ -154,6 +156,10 @@ void ExecutionState::deallocate(const MemoryObject *mo) {
 
 void ExecutionState::addSymbolic(const MemoryObject *mo, const Array *array) {
   symbolics.emplace_back(ref<const MemoryObject>(mo), array);
+}
+
+void ExecutionState::addSubscription(const MemoryObject *mo, EventType event) {
+  subscriptions.emplace_back(ref<const MemoryObject>(mo), event);
 }
 
 /**/

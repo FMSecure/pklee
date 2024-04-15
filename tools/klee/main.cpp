@@ -791,6 +791,7 @@ static const char *modelledExternals[] = {
   "klee_warning",
   "klee_warning_once",
   "klee_stack_trace",
+  "klee_subscribe",
 #ifdef SUPPORT_KLEE_EH_CXX
   "_klee_eh_Unwind_RaiseException_impl",
   "klee_eh_typeid_for",

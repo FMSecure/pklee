@@ -119,6 +119,8 @@ private:
   TimerGroup timers;
   std::unique_ptr<PTree> processTree;
 
+  /// Number of executed non-priority states
+  unsigned int nonPriorityStates;
   /// Used to track states that have been added during the current
   /// instructions step. 
   /// \invariant \ref addedStates is a subset of \ref states. 
@@ -175,6 +177,10 @@ private:
   /// Signals the executor to halt execution at the next instruction
   /// step.
   bool haltExecution;  
+
+  /// Sets to true after finding the first priority path, to purge non-priority
+  /// paths from the queue
+  bool onlyPriorityStates = false;
 
   /// Whether implied-value concretization is enabled. Currently
   /// false, it is buggy (it needs to validate its writes).
@@ -345,6 +351,11 @@ private:
   /// which also manages propagation of implied values,
   /// validity checks, and seed patching.
   void addConstraint(ExecutionState &state, ref<Expr> condition);
+
+  /// Check occurance of the target event on subscribed memory object and
+  /// increase priority accordingly.
+  void setPriorityByEvent(const ExecutionState &state,const MemoryObject &mo,
+      const ObjectState &os);
 
   // Called on [for now] concrete reads, replaces constant with a symbolic
   // Used for testing.

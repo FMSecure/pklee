@@ -120,6 +120,61 @@ void BFSSearcher::printName(llvm::raw_ostream &os) {
 
 ///
 
+ExecutionState &PrioritySearcher::selectState() {
+  ExecutionState *candidateState = states.front();
+
+  for (auto it = states.rbegin(); it != states.rend(); ++it) {
+    auto state = *it;
+    if (state->selectionPriority) {
+      if (state->selectionPriority > candidateState->selectionPriority) {
+        candidateState = state;
+      }
+    }
+  }
+
+  return *candidateState;
+}
+
+void PrioritySearcher::update(ExecutionState *current,
+                         const std::vector<ExecutionState *> &addedStates,
+                         const std::vector<ExecutionState *> &removedStates) {
+  // update current state
+  // Assumption: If new states were added KLEE forked, therefore states evolved.
+  // constraints were added to the current state, it evolved.
+  if (!addedStates.empty() && current &&
+      std::find(removedStates.begin(), removedStates.end(), current) == removedStates.end()) {
+    auto pos = std::find(states.begin(), states.end(), current);
+    assert(pos != states.end());
+    states.erase(pos);
+    states.push_back(current);
+  }
+
+  // insert states
+  states.insert(states.end(), addedStates.begin(), addedStates.end());
+
+  // remove states
+  for (const auto state : removedStates) {
+    if (state == states.front()) {
+      states.pop_front();
+    } else {
+      auto it = std::find(states.begin(), states.end(), state);
+      assert(it != states.end() && "invalid state removed");
+      states.erase(it);
+    }
+  }
+}
+
+bool PrioritySearcher::empty() {
+  return states.empty();
+}
+
+void PrioritySearcher::printName(llvm::raw_ostream &os) {
+  os << "PrioritySearcher\n";
+}
+
+
+///
+
 RandomSearcher::RandomSearcher(RNG &rng) : theRNG{rng} {}
 
 ExecutionState &RandomSearcher::selectState() {

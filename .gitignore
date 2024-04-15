@@ -1,0 +1,4 @@
+**/*.swp
+build/
+examples/**/klee*
+examples/**/*.bc

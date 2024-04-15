@@ -33,6 +33,7 @@ cl::list<Searcher::CoreSearchType> CoreSearch(
         clEnumValN(Searcher::BFS, "bfs",
                    "use Breadth First Search (BFS), where scheduling decisions "
                    "are taken at the level of (2-way) forks"),
+        clEnumValN(Searcher::Priority, "priority", "prioritize subscription events"),
         clEnumValN(Searcher::RandomState, "random-state",
                    "randomly select a state to explore"),
         clEnumValN(Searcher::RandomPath, "random-path",
@@ -111,6 +112,7 @@ Searcher *getNewSearcher(Searcher::CoreSearchType type, RNG &rng, InMemoryPTree 
   switch (type) {
     case Searcher::DFS: searcher = new DFSSearcher(); break;
     case Searcher::BFS: searcher = new BFSSearcher(); break;
+    case Searcher::Priority: searcher = new PrioritySearcher(); break;
     case Searcher::RandomState: searcher = new RandomSearcher(rng); break;
     case Searcher::RandomPath: searcher = new RandomPathSearcher(processTree, rng); break;
     case Searcher::NURS_CovNew: searcher = new WeightedRandomSearcher(WeightedRandomSearcher::CoveringNew, rng); break;

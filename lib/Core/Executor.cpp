@@ -29,6 +29,7 @@
 #include "klee/ADT/KTest.h"
 #include "klee/ADT/RNG.h"
 #include "klee/Config/Version.h"
+#include "klee/Core/EventTypes.h"
 #include "klee/Core/Interpreter.h"
 #include "klee/Expr/ArrayExprOptimizer.h"
 #include "klee/Expr/Assignment.h"
@@ -403,6 +404,11 @@ cl::opt<std::string> TimerInterval(
     cl::init("1s"),
     cl::cat(TerminationCat));
 
+cl::opt<unsigned> MaxNonPriority(
+    "max-non-priority",
+    cl::desc("Maximum number of non-priority paths to explore (default=1)"),
+    cl::init(1),
+    cl::cat(TerminationCat));
 
 /*** Debugging options ***/
 
@@ -471,6 +477,7 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
       atMemoryLimit(false), inhibitForking(false), haltExecution(false),
       ivcEnabled(false), debugLogBuffer(debugBufferString) {
 
+  nonPriorityStates = 1;
 
   const time::Span maxTime{MaxTime};
   if (maxTime) timers.add(
@@ -907,6 +914,9 @@ void Executor::branch(ExecutionState &state,
     for (unsigned i=1; i<N; ++i) {
       ExecutionState *es = result[theRNG.getInt32() % i];
       ExecutionState *ns = es->branch();
+      if (state.selectionPriority) {
+        ns->setSelectionPriority(state.selectionPriority + 1);
+      }
       addedStates.push_back(ns);
       result.push_back(ns);
       processTree->attach(es->ptreeNode, ns, es, reason);
@@ -1049,7 +1059,7 @@ Executor::StatePair Executor::fork(ExecutionState &current, ref<Expr> condition,
       assert(replayPosition<replayPath->size() &&
              "ran out of branches in replay path mode");
       bool branch = (*replayPath)[replayPosition++];
-      
+
       if (res==Solver::True) {
         assert(branch && "hit invalid branch in replay path mode");
       } else if (res==Solver::False) {
@@ -1066,7 +1076,7 @@ Executor::StatePair Executor::fork(ExecutionState &current, ref<Expr> condition,
       }
     } else if (res==Solver::Unknown) {
       assert(!replayKTest && "in replay mode, only one branch can be true.");
-      
+
       if (!branchingPermitted(current)) {
         TimerStatIncrementer timer(stats::forkTime);
         if (theRNG.getBool()) {
@@ -1106,7 +1116,7 @@ Executor::StatePair Executor::fork(ExecutionState &current, ref<Expr> condition,
     }
     if (!(trueSeed && falseSeed)) {
       assert(trueSeed || falseSeed);
-      
+
       res = trueSeed ? Solver::True : Solver::False;
       addConstraint(current, trueSeed ? condition : Expr::createIsZero(condition));
     }
@@ -1143,6 +1153,10 @@ Executor::StatePair Executor::fork(ExecutionState &current, ref<Expr> condition,
     ++stats::forks;
 
     falseState = trueState->branch();
+    if (current.selectionPriority) {
+      falseState->setSelectionPriority(current.selectionPriority + 1);
+    }
+
     addedStates.push_back(falseState);
 
     if (it != seedMap.end()) {
@@ -1164,7 +1178,7 @@ Executor::StatePair Executor::fork(ExecutionState &current, ref<Expr> condition,
           falseSeeds.push_back(*siit);
         }
       }
-      
+
       bool swapInfo = false;
       if (trueSeeds.empty()) {
         if (&current == trueState) swapInfo = true;
@@ -1247,6 +1261,58 @@ void Executor::addConstraint(ExecutionState &state, ref<Expr> condition) {
   if (ivcEnabled)
     doImpliedValueConcretization(state, condition, 
                                  ConstantExpr::alloc(1, Expr::Bool));
+}
+
+void Executor::setPriorityByEvent(const ExecutionState &state,
+    const MemoryObject &mo, const  ObjectState &os) {
+
+  // Find the relevant subscription
+  auto subit = std::find_if(state.subscriptions.begin(),
+      state.subscriptions.end(),
+      [&mo](const std::pair<ref<const MemoryObject>, EventType> sub) -> bool {
+      return sub.first == &mo; });
+
+  assert((subit != state.subscriptions.end()) && "Unexpected subscription in state");
+
+  EventType event = subit->second;
+  unsigned long minHistorySize {1};
+
+  switch (event) {
+    /* case EventType::VerilogChange: */
+    /*   minHistorySize++; */
+    case EventType::Change: {
+      minHistorySize++;
+      auto historySize = os.writeHistory.size();
+
+      if (historySize < minHistorySize) {
+        break;
+      }
+
+      Expr *newValue = os.writeHistory.back();
+      Expr *oldValue = os.writeHistory[historySize - minHistorySize];
+
+
+      if (newValue->compare(*oldValue) != 0) {
+        /* klee_message("Change detected"); */
+        onlyPriorityStates = true;
+        if (state.selectionPriority == 0 && nonPriorityStates > 0) {
+          nonPriorityStates--;
+        }
+        state.setSelectionPriority(state.selectionPriority + 1);
+      }
+
+      break;
+    }
+
+    case EventType::Any: {
+      onlyPriorityStates = true;
+      state.setSelectionPriority(state.selectionPriority + 1);
+      break;
+    }
+
+    default:
+      break;
+  }
 }
 
 const Cell& Executor::eval(KInstruction *ki, unsigned index, 
@@ -3328,6 +3394,16 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 }
 
 void Executor::updateStates(ExecutionState *current) {
+
+  if (onlyPriorityStates && nonPriorityStates >= MaxNonPriority) {
+    for (auto it = addedStates.begin(); it < addedStates.end(); it++) {
+      auto state = *it;
+      if (state->selectionPriority == 0) {
+        addedStates.erase(it);
+      }
+    }
+  }
+
   if (searcher) {
     searcher->update(current, addedStates, removedStates);
   }
@@ -3487,7 +3563,7 @@ void Executor::run(ExecutionState &initialState) {
 
   if (usingSeeds) {
     std::vector<SeedInfo> &v = seedMap[&initialState];
-    
+
     for (std::vector<KTest*>::const_iterator it = usingSeeds->begin(), 
            ie = usingSeeds->end(); it != ie; ++it)
       v.push_back(SeedInfo(*it));
@@ -3644,6 +3720,10 @@ void Executor::terminateState(ExecutionState &state,
       std::find(addedStates.begin(), addedStates.end(), &state);
   if (it==addedStates.end()) {
     state.pc = state.prevPC;
+
+    if(state.selectionPriority == 0) {
+      nonPriorityStates++;
+    }
 
     removedStates.push_back(&state);
   } else {
@@ -4336,7 +4416,12 @@ void Executor::executeMemoryOperation(ExecutionState &state,
         } else {
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
           wos->write(offset, value);
-        }          
+
+          if (mo->hasSubscribers) {
+            wos->appendWriteHistory(value);
+            setPriorityByEvent(state, *mo, *wos);
+          }
+        }
       } else {
         ref<Expr> result = os->read(offset, type);
         
@@ -4898,3 +4983,5 @@ Interpreter *Interpreter::create(LLVMContext &ctx, const InterpreterOptions &opt
                                  InterpreterHandler *ih) {
   return new Executor(ctx, opts, ih);
 }
+
+

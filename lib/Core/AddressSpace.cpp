@@ -47,6 +47,9 @@ ObjectState *AddressSpace::getWriteable(const MemoryObject *mo,
 
   // Add a copy of this object state that can be updated
   ref<ObjectState> newObjectState(new ObjectState(*os));
+
+  newObjectState->initializeWriteHistory(os->writeHistory);
+
   newObjectState->copyOnWriteOwner = cowKey;
   objects = objects.replace(std::make_pair(mo, newObjectState));
   return newObjectState.get();

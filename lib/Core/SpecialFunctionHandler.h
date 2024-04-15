@@ -25,6 +25,7 @@ namespace klee {
   class Executor;
   class Expr;
   class ExecutionState;
+  class MemoryObject;
   struct KInstruction;
   template<typename T> class ref;
   
@@ -80,6 +81,9 @@ namespace klee {
 
   public:
     SpecialFunctionHandler(Executor &_executor);
+
+    /// Extract the given name for memory object from the function arguments
+    bool getMemoryObjectName(ExecutionState &state, ref<Expr> arg, std::string &name);
 
     /// Perform any modifications on the LLVM module before it is
     /// prepared for execution. At the moment this involves deleting
@@ -150,6 +154,7 @@ namespace klee {
     HANDLER(handleUnderConstrained);
     HANDLER(handleWarning);
     HANDLER(handleWarningOnce);
+    HANDLER(handleSubscribe);
 #undef HANDLER
   };
 } // End klee namespace

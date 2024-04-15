@@ -19,6 +19,7 @@
 #include "TimingSolver.h"
 
 #include "klee/Config/config.h"
+#include "klee/Core/EventTypes.h"
 #include "klee/Module/KInstruction.h"
 #include "klee/Module/KModule.h"
 #include "klee/Solver/SolverCmdLine.h"
@@ -120,6 +121,7 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("malloc", handleMalloc, true),
   add("memalign", handleMemalign, true),
   add("realloc", handleRealloc, true),
+  add("klee_subscribe", handleSubscribe, false),
 
 #ifdef SUPPORT_KLEE_EH_CXX
   add("_klee_eh_Unwind_RaiseException_impl", handleEhUnwindRaiseExceptionImpl, false),
@@ -812,10 +814,7 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
     return;
   }
 
-  name = arguments[2]->isZero() ? "" : readStringAtAddress(state, arguments[2]);
-
-  if (name.length() == 0) {
-    name = "unnamed";
+  if (!getMemoryObjectName(state, arguments[2], name)) {
     klee_warning("klee_make_symbolic: renamed empty name to \"unnamed\"");
   }
 
@@ -837,17 +836,19 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
 
     // FIXME: Type coercion should be done consistently somewhere.
     bool res;
+
     bool success __attribute__((unused)) = executor.solver->mustBeTrue(
         s->constraints,
         EqExpr::create(
             ZExtExpr::create(arguments[1], Context::get().getPointerWidth()),
             mo->getSizeExpr()),
         res, s->queryMetaData);
-    assert(success && "FIXME: Unhandled solver failure");
     
+    assert(success && "FIXME: Unhandled solver failure");
+
     if (res) {
       executor.executeMakeSymbolic(*s, mo, name);
-    } else {      
+    } else {
       executor.terminateStateOnUserError(*s, "Wrong size given to klee_make_symbolic");
     }
   }
@@ -868,4 +869,53 @@ void SpecialFunctionHandler::handleMarkGlobal(ExecutionState &state,
     assert(!mo->isLocal);
     mo->isGlobal = true;
   }
+}
+
+void SpecialFunctionHandler::handleSubscribe(ExecutionState &state,
+                                             KInstruction *target,
+                                             std::vector<ref<Expr> > &arguments) {
+  if (arguments.size() != 3) {
+    executor.terminateStateOnUserError(state,
+        "Incorrect number of arguments to klee_subscribe(void*, char*, EventType)");
+    return;
+  }
+
+  std::string name;
+  if (!getMemoryObjectName(state, arguments[1], name)) {
+    klee_warning("klee_subscribe: renamed empty name to \"unnamed\"");
+  }
+
+  Executor::ExactResolutionList rl;
+  executor.resolveExact(state, arguments[0], rl, "klee_subscribe");
+
+  for (Executor::ExactResolutionList::iterator it = rl.begin(),
+         ie = rl.end(); it != ie; ++it) {
+    const MemoryObject *mo = it->first.first;
+    mo->setName(name);
+    mo->setSubscribed();
+
+    const ObjectState *old = it->first.second;
+    ExecutionState *s = it->second;
+
+    if (old->readOnly) {
+      executor.terminateStateOnUserError(*s, "cannot select readonly object");
+      return;
+    }
+
+    auto eventConstantExpr = dyn_cast<ConstantExpr>(arguments[2]);
+    auto eventAPValue = eventConstantExpr->getAPValue();
+    EventType event = EventType(eventAPValue.getSExtValue());
+    state.addSubscription(mo, event);
+  }
+}
+
+bool SpecialFunctionHandler::getMemoryObjectName(ExecutionState &state,
+                                                 ref<Expr> arg, std::string &name) {
+    if (arg->isZero()) {
+      name = "unnamed";
+      return false;
+    }
+
+    name = readStringAtAddress(state, arg);
+    return true;
 }
